@@ -33,24 +33,29 @@ Usuário ──HTTPS──► AWS WAF ─► ALB (subnets públicas, 2 AZs)
 
 ## 1. Banco de dados (Supabase)
 
-1. Crie um projeto em supabase.com (região **East US**, perto do `us-east-1`).
-2. Em *Project Settings → Database* copie a connection string do **pooler** e baixe o certificado SSL.
-3. Na pasta `app/`, copie `.env.example` para `.env` e preencha `DATABASE_URL_ADMIN` (usuário `postgres`).
-4. Rode as migrações e defina a senha da role da aplicação:
+1. Crie um projeto em supabase.com (região **East US**).
+2. No botão **Connect → Session pooler**, copie a connection string. A senha do banco fica em
+   **Database → Settings → Database password** (dá para resetar ali).
+3. Na pasta `app/`, copie `.env.example` para `.env` e preencha:
+   - `DATABASE_URL_ADMIN`: usuário `postgres.<ref>`, porta **5432**, senha do banco.
+   - `DATABASE_URL`: usuário `mentor_app.<ref>`, porta **6543**, uma senha forte **inventada por você** (16+ caracteres).
+   - `JWT_SECRET`: `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`
+   - Use senhas só com letras e números, ou codifique `@ # / : %` na URL (`%40 %23 %2F %3A %25`).
+4. Crie as tabelas. O `migrate` também define a senha do `mentor_app` igual à do `DATABASE_URL`
+   (`SYNC_APP_PASSWORD=1` no `.env`):
    ```bash
-   cd app && npm ci
+   cd app
+   npm ci
    npm run migrate
-   # no SQL Editor do Supabase:
-   alter role mentor_app with login password '<senha forte>';
    ```
-5. Em `.env`, preencha `DATABASE_URL` com o usuário `mentor_app.<project-ref>` na porta **6543** (pooler em modo transação, que permite muitas instâncias),
-   `DB_SSL_CA_BASE64` (`base64 -w0 prod-ca-2021.crt`) e `JWT_SECRET` (`openssl rand -base64 48`).
-6. Crie o primeiro usuário da secretaria (a senha temporária aparece uma vez):
+5. Dados de demonstração (usuários `@demo.unidavi.edu.br`, senha = `SEED_PASSWORD`):
+   ```bash
+   npm run seed:demo
+   ```
+   Ou, para um ambiente real, crie só o primeiro usuário da secretaria (a senha temporária aparece uma vez):
    ```bash
    npm run criar-usuario -- --perfil secretaria --nome "Secretaria Acadêmica" --email secretaria@unidavi.edu.br
    ```
-   Para a apresentação, há dados de demonstração: coloque `SEED_PASSWORD="Demo#Mentor2026"` no `.env` e rode `npm run seed:demo`.
-   Logins: `aluno@demo.unidavi.edu.br`, `professor@demo.unidavi.edu.br` e `secretaria@demo.unidavi.edu.br`.
 
 ## 2. Rodar localmente
 
@@ -59,6 +64,13 @@ cd app
 npm start          # http://localhost:8080
 npm test           # 42 testes (segurança da API e anti-trapaça do jogo)
 ```
+
+| Perfil | E-mail (senha `Demo#Mentor2026`) |
+|--------|--------|
+| Aluno | `aluno@demo.unidavi.edu.br` |
+| Aluno com parcela vencida | `ana@demo.unidavi.edu.br` |
+| Professor | `professor@demo.unidavi.edu.br` |
+| Secretaria | `secretaria@demo.unidavi.edu.br` |
 
 ## 3. Deploy na AWS (AWS Academy)
 
