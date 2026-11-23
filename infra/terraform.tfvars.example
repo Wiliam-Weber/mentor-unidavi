@@ -1,0 +1,8 @@
+# Opcional: o pipeline já funciona com os valores padrão.
+aws_region    = "us-east-1"
+instance_type = "t3.small"
+asg_min       = 2
+asg_max       = 4
+asg_desired   = 2
+# habilitar_waf   = false   # use se a conta do lab recusar o WAFv2
+# certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."

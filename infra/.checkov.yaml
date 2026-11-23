@@ -1,0 +1,19 @@
+# Configuração do Checkov (scan estático do Terraform no pipeline).
+# Cada exceção abaixo é uma decisão consciente, documentada em docs/SEGURANCA.md (riscos aceitos).
+framework:
+  - terraform
+skip-check:
+  # --- HTTP sem certificado: o AWS Academy não oferece domínio próprio para emitir certificado ACM.
+  #     Com certificate_arn preenchido, o listener 80 passa a redirecionar para HTTPS (443, TLS 1.2+).
+  - CKV_AWS_260   # SG do ALB aceita porta 80 (necessária para o redirecionamento HTTP->HTTPS)
+  - CKV_AWS_103   # listener HTTP sem TLS (idem)
+  - CKV2_AWS_20   # redirecionamento HTTP->HTTPS só existe quando há certificado
+  - CKV_AWS_378   # ALB -> EC2 em HTTP dentro da VPC privada (TLS termina no ALB; padrão AWS)
+  # --- Bucket de logs
+  - CKV_AWS_18    # access logging do próprio bucket de logs geraria recursão
+  - CKV_AWS_144   # replicação entre regiões: o Learner Lab limita regiões e custo
+  - CKV_AWS_145   # access logs do ALB exigem SSE-S3 (AES256), não aceitam KMS
+  - CKV2_AWS_62   # notificações de evento não se aplicam a bucket de logs
+  # --- Ambiente de laboratório
+  - CKV_AWS_150   # proteção contra exclusão desligada por padrão para permitir destroy ao fim da aula (variável alb_deletion_protection)
+  - CKV2_AWS_57   # rotação automática exige Lambda/role IAM (bloqueado no Academy); rotação manual documentada

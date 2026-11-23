@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exemplos sem segredos reais"
+paths = ['''app/\.env\.example''', '''infra/.*\.example''']
