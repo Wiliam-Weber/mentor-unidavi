@@ -62,15 +62,15 @@ aprovação antes de mexer no banco e na AWS.
 ## 5. SonarCloud (scanner exigido na atividade)
 
 1. Entre em [sonarcloud.io](https://sonarcloud.io) com a conta do GitHub (gratuito para repositório público).
-2. **+ → Analyze new project** → escolha o repositório → método **With GitHub Actions**.
-3. Copie o token e crie o secret `SONAR_TOKEN`.
-4. Em **Settings → Secrets and variables → Actions → aba Variables**, crie:
-   - `SONAR_ORGANIZATION` = a organização que aparece no SonarCloud (normalmente seu usuário do GitHub em minúsculas)
-   - `SONAR_PROJECT_KEY` = a *project key* mostrada pelo SonarCloud
-5. No SonarCloud, em **Administration → Analysis Method**, desligue a **Automatic Analysis** (a análise vem do pipeline).
+2. **+ → Analyze new project** → escolha o repositório `mentor-unidavi` → **Set up**.
+3. Em **Administration → Analysis Method**, desligue a **Automatic Analysis** (a análise vem do pipeline).
+4. Em **My Account → Security**, gere um token e crie o secret `SONAR_TOKEN` no GitHub.
 
-Sem o `SONAR_TOKEN`, o pipeline continua funcionando com Semgrep, Gitleaks, Checkov e Trivy,
-e mostra um aviso de que o SonarQube foi pulado.
+A organização e a chave do projeto são deduzidas do nome do repositório (`dono_repositorio`, o padrão
+do SonarCloud). Só se o SonarCloud mostrar valores diferentes, crie as **variables** `SONAR_ORGANIZATION`
+e `SONAR_PROJECT_KEY` em *Settings → Secrets and variables → Actions → Variables*.
+
+Sem o `SONAR_TOKEN`, o pipeline continua com Semgrep, Gitleaks, Checkov e Trivy e mostra um aviso.
 
 ## 6. Rodar o deploy
 
@@ -86,6 +86,9 @@ testes → análise estática → imagem → banco (aprovação) → deploy
    As instâncias levam **3 a 5 minutos** para ficar saudáveis. Antes disso a URL responde `502/503`.
 
 Todo `push` na branch `main` roda o mesmo fluxo e atualiza a aplicação sem derrubá-la (instance refresh).
+
+Enquanto os secrets do banco e da AWS não estiverem configurados, o pipeline roda testes e scans
+normalmente e **pula o deploy** com um aviso (não fica vermelho).
 
 ## 7. Usuários para testar
 

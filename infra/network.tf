@@ -169,7 +169,7 @@ resource "aws_network_acl" "privada" {
     from_port  = 8080
     to_port    = 8080
   }
-  # Respostas das conexões de saída (Supabase, Secrets Manager, GHCR)
+  # Respostas das conexões de saída (Supabase, Secrets Manager, ECR)
   ingress {
     rule_no    = 110
     protocol   = "tcp"

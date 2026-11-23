@@ -28,6 +28,36 @@ env:
 
 jobs:
   # ------------------------------------------------------------------
+  # Descobre se o banco e a AWS já foram configurados. Sem os secrets, o pipeline roda
+  # testes e scans normalmente e só pula o deploy (com um aviso), em vez de falhar.
+  config:
+    name: Verificar configuração
+    runs-on: ubuntu-latest
+    outputs:
+      pronto: ${{ steps.v.outputs.pronto }}
+    steps:
+      - id: v
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          DATABASE_URL_ADMIN: ${{ secrets.DATABASE_URL_ADMIN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          faltando=""
+          for s in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN DATABASE_URL_ADMIN DATABASE_URL JWT_SECRET; do
+            [ -n "${!s}" ] || faltando="$faltando $s"
+          done
+          if [ -n "$faltando" ]; then
+            echo "pronto=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Deploy pulado. Secrets não configurados:$faltando (veja docs/DEPLOY-AWS.md)"
+            echo "### Deploy pulado: configure os secrets$faltando (docs/DEPLOY-AWS.md)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "pronto=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ------------------------------------------------------------------
   testes:
     name: Testes e auditoria de dependências
     runs-on: ubuntu-latest
@@ -90,22 +120,28 @@ jobs:
           name: cobertura
           path: app/coverage
 
-      - name: SonarQube / SonarCloud - SAST e qualidade
+      - name: SonarCloud - parâmetros do projeto
+        if: env.SONAR_TOKEN != ''
+        id: sonar
+        env:
+          ORG: ${{ vars.SONAR_ORGANIZATION }}
+          CHAVE: ${{ vars.SONAR_PROJECT_KEY }}
+        run: |
+          # Padrão do SonarCloud ao importar do GitHub: organização = dono em minúsculas, chave = dono_repositório
+          echo "org=${ORG:-${GITHUB_REPOSITORY_OWNER,,}}" >> "$GITHUB_OUTPUT"
+          echo "chave=${CHAVE:-${GITHUB_REPOSITORY_OWNER}_${GITHUB_REPOSITORY#*/}}" >> "$GITHUB_OUTPUT"
+
+      - name: SonarQube / SonarCloud - SAST, qualidade e Quality Gate (bloqueia se reprovado)
         if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
         env:
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
         with:
           args: >
-            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
-            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'mentor-unidavi' }}
-
-      - name: SonarQube - Quality Gate (bloqueia se reprovado)
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
-        timeout-minutes: 5
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+            -Dsonar.organization=${{ steps.sonar.outputs.org }}
+            -Dsonar.projectKey=${{ steps.sonar.outputs.chave }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
 
       - name: Aviso - SonarQube não configurado
         if: env.SONAR_TOKEN == ''
@@ -158,8 +194,8 @@ jobs:
   # ------------------------------------------------------------------
   banco:
     name: Migração do banco (Supabase)
-    needs: imagem
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [config, imagem]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.config.outputs.pronto == 'true'
     runs-on: ubuntu-latest
     environment: production # ponto único de aprovação manual: daqui em diante altera banco e AWS
     defaults:
@@ -176,11 +212,6 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci --omit=dev
-      - name: Conferir secrets
-        run: |
-          for s in DATABASE_URL_ADMIN DATABASE_URL; do
-            [ -n "${!s}" ] || { echo "::error::Secret $s não configurado (veja docs/DEPLOY-AWS.md)"; exit 1; }
-          done
       - name: Aplicar migrações e sincronizar a senha do mentor_app
         run: npm run migrate
         env:

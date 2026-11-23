@@ -8,7 +8,11 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 FROM node:22-alpine
 ENV NODE_ENV=production PORT=8080
 WORKDIR /app
-RUN apk upgrade --no-cache
+# Atualiza pacotes do sistema e remove gerenciadores de pacote que não são usados em execução
+# (menos superfície de ataque e menos CVEs para o Trivy: npm traz dezenas de dependências próprias)
+RUN apk upgrade --no-cache \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node package.json ./
 COPY --chown=node:node src ./src
