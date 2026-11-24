@@ -76,3 +76,21 @@ variable "lab_role_name" {
   type        = string
   default     = "LabRole"
 }
+
+variable "db_instance_class" {
+  description = "Classe da instância do RDS (o Learner Lab aceita as menores)"
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "db_multi_az" {
+  description = "Réplica síncrona em outra zona. Desligado por padrão para economizar crédito do lab"
+  type        = bool
+  default     = false
+}
+
+variable "db_deletion_protection" {
+  description = "Impede apagar o banco. Desligado no lab para o workflow de destruir funcionar"
+  type        = bool
+  default     = false
+}

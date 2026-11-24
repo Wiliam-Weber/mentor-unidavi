@@ -21,3 +21,8 @@ output "ecr_repositorio" {
 output "segredo_nome" {
   value = aws_secretsmanager_secret.app.name
 }
+
+output "banco_endpoint" {
+  description = "Endereço privado do RDS (só resolve/conecta de dentro da VPC)"
+  value       = aws_db_instance.main.address
+}

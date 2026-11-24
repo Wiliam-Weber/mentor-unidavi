@@ -1,18 +1,20 @@
 # Mentor UNIDAVI – Auditoria e Segurança da Informação
 
-Portal acadêmico (aluno, professor e secretaria) com **desenvolvimento seguro**, **Supabase** como banco,
+Portal acadêmico (aluno, professor e secretaria) com **desenvolvimento seguro**, banco **PostgreSQL (Amazon RDS)**
+isolado numa subnet privada,
 infraestrutura **AWS em Terraform** e **pipeline DevSecOps** que roda scan estático a cada commit e
 bloqueia o deploy se algo reprovar.
 
 ```
-Usuário ──HTTPS──► AWS WAF ─► ALB (subnets públicas, 2 AZs)
-                                 │  somente SG-ALB → 8080
-                                 ▼
-                    Auto Scaling 2–6 × EC2 (subnets privadas, sem IP público)
-                    Docker endurecido · segredos do Secrets Manager (KMS)
-                                 │  NAT Gateway · TLS
-                                 ▼
-                      Supabase PostgreSQL (role mentor_app + RLS)
+Usuário ──HTTP/HTTPS──► AWS WAF ─► ALB            (subnets públicas, 2 zonas)
+                                    │ SG: 8080 só do ALB
+                                    ▼
+                     Auto Scaling 2–4 × EC2       (subnets privadas de aplicação, sem IP público)
+                     Docker endurecido · segredos do Secrets Manager (KMS)
+                                    │ SG: 5432 só da aplicação · TLS obrigatório
+                                    ▼
+                     RDS PostgreSQL 16            (subnets privadas de dados, SEM rota para a internet)
+                     criptografado (KMS) · senha gerenciada pelo RDS · role mentor_app + RLS
 ```
 
 ## Funcionalidades
@@ -26,12 +28,16 @@ Usuário ──HTTPS──► AWS WAF ─► ALB (subnets públicas, 2 AZs)
 | Pasta | Conteúdo |
 |-------|----------|
 | `app/` | API Node.js 22 (Express 5) + frontend (HTML/CSS/JS sem framework) + testes |
-| `supabase/migrations/` | Schema, segurança do banco (role, RLS, grants) e dados iniciais |
+| `supabase/migrations/` | Migrações SQL (PostgreSQL puro: rodam no RDS e no Supabase): schema, role, RLS, grants e dados iniciais |
 | `infra/` | Terraform: VPC, subnets, NAT, NACLs, Flow Logs, ALB, WAF, Auto Scaling, KMS, Secrets Manager, CloudWatch |
 | `.github/workflows/` | Pipeline: testes → Gitleaks → SonarQube → Checkov → Trivy → build → scan da imagem → Terraform |
 | `docs/` | `SPEC.md` (especificação SDD) e `SEGURANCA.md` (controles, OWASP, riscos aceitos) |
 
-## 1. Banco de dados (Supabase)
+## 1. Banco de dados para rodar no computador
+
+Na AWS o banco é o RDS, criado pelo Terraform (seção 3). Para rodar **localmente**, use qualquer PostgreSQL;
+o jeito mais rápido é um projeto gratuito no Supabase:
+
 
 1. Crie um projeto em supabase.com (região **East US**).
 2. No botão **Connect → Session pooler**, copie a connection string. A senha do banco fica em
@@ -80,8 +86,8 @@ Passo a passo completo, para quem nunca mexeu no projeto: **[docs/DEPLOY-AWS.md]
 Resumo:
 0. **Fork** do repositório para a sua conta (só o dono do repositório consegue cadastrar secrets).
 1. Learner Lab → *Start Lab* → *AWS Details* → copiar as 3 credenciais.
-2. GitHub → *Settings → Secrets and variables → Actions*: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-   `AWS_SESSION_TOKEN`, `DATABASE_URL_ADMIN`, `DATABASE_URL`, `JWT_SECRET` (e `SONAR_TOKEN`).
+2. GitHub → *Settings → Secrets and variables → Actions*: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e
+   `AWS_SESSION_TOKEN` (e `SONAR_TOKEN`). As senhas do banco e o `JWT_SECRET` são gerados automaticamente.
 3. *Actions → CI/CD Mentor UNIDAVI → Run workflow* (marcar "dados de demonstração" na primeira vez).
 4. A URL aparece no resumo do job **Deploy na AWS**.
 5. Depois da apresentação: *Actions → Destruir ambiente AWS* (digitar `DESTRUIR`).
@@ -89,15 +95,15 @@ Resumo:
 ## 4. Pipeline (GitHub Actions)
 
 ```
-testes ─► análise estática ─► imagem ─► banco ─► deploy
-          Gitleaks             Docker    migrações  bucket do state
-          Semgrep (SAST)       Trivy     (Supabase) KMS, ECR, segredo
-          SonarQube + Gate                          push da imagem no ECR
-          Checkov (Terraform)                       terraform apply
-          Trivy (repositório)                       instance refresh
+testes ─► análise estática ─► imagem ─► deploy (aprovação)
+          Gitleaks             Docker    bucket do state, KMS, ECR, segredo
+          Semgrep (SAST)       Trivy     push da imagem no ECR
+          SonarQube + Gate               terraform apply (VPC, WAF, ALB, RDS, Auto Scaling)
+          Checkov (Terraform)            instâncias migram o banco por dentro da VPC
+          Trivy (repositório)            instance refresh sem derrubar o site
 ```
 
 - Em **todo push e Pull Request**: testes, `npm audit` e todos os scans. **Qualquer achado HIGH/CRITICAL reprova e bloqueia o deploy.**
-- Na **main**: depois da aprovação manual (environment `production`), migra o banco e publica na AWS.
+- Na **main**: depois da aprovação manual (environment `production`), publica na AWS. O RDS é privado, então as migrações rodam nas próprias instâncias, dentro da VPC.
 - Todas as actions são fixadas pelo **hash do commit**, e não por tag (proteção contra ataque de supply chain), e o Gitleaks é baixado com verificação de SHA-256.
 - Os segredos ficam só nos GitHub Secrets e no AWS Secrets Manager (criptografado com KMS): nunca no código nem no state do Terraform.

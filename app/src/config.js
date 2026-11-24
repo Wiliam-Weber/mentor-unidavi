@@ -20,10 +20,9 @@ module.exports = Object.freeze({
   port: parseInt(process.env.PORT || '8080', 10),
   databaseUrl: process.env.DATABASE_URL || '',
   dbPoolMax: parseInt(process.env.DB_POOL_MAX || '10', 10),
-  // CA do Supabase (Database Settings > SSL Configuration), em base64, para validar o certificado
-  dbSslCa: process.env.DB_SSL_CA_BASE64
-    ? Buffer.from(process.env.DB_SSL_CA_BASE64, 'base64').toString('utf8')
-    : null,
+  // Certificado da autoridade do banco, para validar o TLS: arquivo (RDS, embutido na imagem)
+  // ou base64 (Supabase: Database Settings > SSL Configuration)
+  dbSslCa: require('./utils/ca-banco').lerCaBanco(),
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '2h',
   // Em produção com HTTPS deve ser "true". Só use "false" em ambiente sem certificado (ex.: lab sem domínio).

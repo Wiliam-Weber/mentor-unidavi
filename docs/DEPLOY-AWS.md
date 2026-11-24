@@ -2,9 +2,13 @@
 
 Guia para quem vai publicar o Mentor UNIDAVI no **AWS Academy (Learner Lab)**.
 Ninguém precisa instalar nada no computador: **o GitHub Actions faz tudo** (scans de segurança,
-migração do banco, Terraform e deploy). Você só configura os secrets e clica em *Run workflow*.
+Terraform, banco e deploy). Você só cadastra **3 secrets da AWS** e clica em *Run workflow*.
 
-Tempo estimado: **20 minutos** na primeira vez (a maior parte é a AWS criando os recursos).
+O banco é um **Amazon RDS PostgreSQL** criado pelo próprio Terraform numa subnet privada, sem acesso
+pela internet. As senhas do banco e o `JWT_SECRET` são **gerados automaticamente** e guardados no
+AWS Secrets Manager: ninguém precisa criá-los nem conhecê-los.
+
+Tempo estimado: **25 a 35 minutos** na primeira vez (a maior parte é a AWS criando NAT, RDS e instâncias).
 
 ---
 
@@ -25,50 +29,27 @@ Todos os passos abaixo são feitos **no seu fork**.
    `aws_access_key_id`, `aws_secret_access_key` e `aws_session_token`.
 
 > As credenciais **expiram quando a sessão do lab termina** (cerca de 4 horas).
-> Em uma nova sessão, repita este passo e atualize os 3 secrets da AWS (passo 3).
+> Em uma nova sessão, repita este passo e atualize os 3 secrets (passo 2).
 
-## 2. Banco de dados (Supabase)
+## 2. Cadastrar os secrets no GitHub
 
-Peça ao dono do projeto, ou pegue em **Supabase → botão Connect → Session pooler**:
-
-| Valor | Formato |
-|-------|---------|
-| `DATABASE_URL_ADMIN` | `postgresql://postgres.<ref>:<senha-do-banco>@aws-0-<regiao>.pooler.supabase.com:5432/postgres` |
-| `DATABASE_URL` | `postgresql://mentor_app.<ref>:<senha-forte>@aws-0-<regiao>.pooler.supabase.com:6543/postgres` |
-
-- A senha do `DATABASE_URL` pode ser **qualquer senha forte (16+ caracteres) inventada por você**:
-  o pipeline configura essa senha no banco sozinho.
-- Prefira senhas só com letras e números. Se tiver `@ # / : %`, troque na URL por `%40 %23 %2F %3A %25`.
-- Repare na porta: **5432** no admin e **6543** na aplicação.
-
-## 3. Configurar os secrets no GitHub
-
-No repositório: **Settings → Secrets and variables → Actions → New repository secret**.
+No fork: **Settings → Secrets and variables → Actions → New repository secret**.
 
 | Secret | Valor | Obrigatório |
 |--------|-------|:-----------:|
 | `AWS_ACCESS_KEY_ID` | do passo 1 | sim |
 | `AWS_SECRET_ACCESS_KEY` | do passo 1 | sim |
-| `AWS_SESSION_TOKEN` | do passo 1 | sim |
-| `DATABASE_URL_ADMIN` | do passo 2 | sim |
-| `DATABASE_URL` | do passo 2 | sim |
-| `JWT_SECRET` | um texto aleatório de 48+ caracteres (veja abaixo) | sim |
-| `SONAR_TOKEN` | token do SonarCloud (passo 5) | recomendado |
-| `DB_SSL_CA_BASE64` | certificado do Supabase em base64 (valida o TLS do banco) | opcional |
+| `AWS_SESSION_TOKEN` | do passo 1 (é longo, copie inteiro) | sim |
+| `SONAR_TOKEN` | token do SonarCloud (passo 4) | recomendado |
 | `SEED_PASSWORD` | senha dos usuários de demonstração (padrão: `Demo#Mentor2026`) | opcional |
 
-Para gerar o `JWT_SECRET`, em qualquer terminal com Node.js:
-```bash
-node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
-```
-
-## 4. Aprovação manual (opcional, mas vale mostrar)
+## 3. Aprovação manual (opcional, mas vale mostrar)
 
 **Settings → Environments → New environment** → nome `production` →
 marque **Required reviewers** e adicione você. Assim o pipeline para e espera um clique de
-aprovação antes de mexer no banco e na AWS.
+aprovação antes de mexer na AWS.
 
-## 5. SonarCloud (scanner exigido na atividade)
+## 4. SonarCloud (scanner exigido na atividade)
 
 1. Entre em [sonarcloud.io](https://sonarcloud.io) com a conta do GitHub (gratuito para repositório público).
 2. **+ → Analyze new project** → escolha o repositório `mentor-unidavi` → **Set up**.
@@ -81,25 +62,32 @@ e `SONAR_PROJECT_KEY` em *Settings → Secrets and variables → Actions → Var
 
 Sem o `SONAR_TOKEN`, o pipeline continua com Semgrep, Gitleaks, Checkov e Trivy e mostra um aviso.
 
-## 6. Rodar o deploy
+## 5. Rodar o deploy
 
 1. Aba **Actions → CI/CD Mentor UNIDAVI → Run workflow**.
-2. Na primeira vez, marque **Criar/atualizar os dados de demonstração**.
+2. Na primeira vez, marque **Criar os dados de demonstração**.
 3. Clique em **Run workflow** e acompanhe:
 
 ```
-testes → análise estática → imagem → banco (aprovação) → deploy
+testes → análise estática → imagem → deploy (aprovação)
 ```
 
 4. No fim do job **Deploy na AWS**, o resumo mostra a **URL da aplicação** (`http://mentor-alb-....elb.amazonaws.com`).
-   As instâncias levam **3 a 5 minutos** para ficar saudáveis. Antes disso a URL responde `502/503`.
+   O RDS leva cerca de 10 minutos para ser criado no primeiro deploy, e as instâncias mais 3 a 5 minutos
+   para ficar saudáveis. Antes disso a URL responde `502/503`.
 
 Todo `push` na branch `main` roda o mesmo fluxo e atualiza a aplicação sem derrubá-la (instance refresh).
+Enquanto os secrets da AWS não estiverem configurados, o pipeline roda testes e scans normalmente e
+**pula o deploy** com um aviso (não fica vermelho).
 
-Enquanto os secrets do banco e da AWS não estiverem configurados, o pipeline roda testes e scans
-normalmente e **pula o deploy** com um aviso (não fica vermelho).
+### O que acontece quando uma instância sobe
 
-## 7. Usuários para testar
+1. Lê o segredo da aplicação (`JWT_SECRET`, senha do `mentor_app`) e o segredo do administrador do banco, que o próprio RDS gera.
+2. Baixa a imagem do ECR privado.
+3. Roda as migrações com o usuário administrador. Um lock no banco garante que só uma instância migra por vez.
+4. Apaga a credencial de administrador e sobe a aplicação com o usuário de menor privilégio `mentor_app`.
+
+## 6. Usuários para testar
 
 Senha de todos: `Demo#Mentor2026` (ou o `SEED_PASSWORD`, se definido).
 
@@ -110,10 +98,10 @@ Senha de todos: `Demo#Mentor2026` (ou o `SEED_PASSWORD`, se definido).
 | Professor | `professor@demo.unidavi.edu.br` |
 | Secretaria | `secretaria@demo.unidavi.edu.br` |
 
-## 8. Depois da apresentação
+## 7. Depois da apresentação
 
 **Actions → Destruir ambiente AWS → Run workflow** → digite `DESTRUIR`.
-Remove toda a infraestrutura para não consumir o crédito do lab. O banco no Supabase continua.
+Remove toda a infraestrutura, inclusive o banco RDS, para não consumir o crédito do lab.
 
 ---
 
@@ -122,18 +110,20 @@ Remove toda a infraestrutura para não consumir o crédito do lab. O banco no Su
 | Recurso | Para quê |
 |---------|----------|
 | VPC `10.0.0.0/16`, 2 zonas | rede isolada |
-| 2 subnets públicas | só o Load Balancer e o NAT Gateway |
-| 2 subnets privadas | instâncias da aplicação, sem IP público |
+| 2 subnets públicas (`10.0.1.0/24`, `10.0.2.0/24`) | só o Load Balancer e o NAT Gateway |
+| 2 subnets privadas de aplicação (`10.0.11.0/24`, `10.0.12.0/24`) | instâncias da aplicação, sem IP público, saída só pelo NAT |
+| 2 subnets privadas de dados (`10.0.21.0/24`, `10.0.22.0/24`) | banco RDS; tabela de rotas **sem rota para a internet** |
 | Internet Gateway, NAT Gateway, rotas | entrada pelo ALB, saída controlada |
-| NACLs | segunda barreira; bloqueiam 22 (SSH) e 3389 (RDP) da internet |
-| Security Groups encadeados | Internet → ALB (80/443) → App (8080, só do ALB) |
+| NACLs (pública, aplicação, dados) | segunda barreira; bloqueiam SSH/RDP; dados só aceitam 5432 das subnets da aplicação |
+| Security Groups encadeados | Internet → ALB (80/443) → App (8080) → Banco (5432) |
 | Application Load Balancer | distribui o tráfego entre as zonas e faz health check |
 | AWS WAF | regras OWASP, SQL Injection, IPs maliciosos e limite por IP |
 | Auto Scaling Group (2 a 4 × t3.small) | escala por CPU (60%) |
+| RDS PostgreSQL 16 | criptografado com KMS, TLS obrigatório, backup de 7 dias, senha gerenciada pelo RDS, sem IP público |
 | ECR | registro privado das imagens, com scan e tags imutáveis |
-| KMS (chave própria) | criptografa segredo, imagens e logs |
-| Secrets Manager | credenciais do banco e JWT, lidas no boot da instância |
-| CloudWatch | logs da aplicação e do WAF, alarme de erros 5xx |
+| KMS (chave própria) | criptografa banco, segredos, imagens e logs |
+| Secrets Manager | segredo da aplicação e senha do administrador do banco |
+| CloudWatch | logs da aplicação, do banco e do WAF; alarme de erros 5xx |
 | S3 de logs | Flow Logs da VPC e access logs do ALB |
 | S3 do state | estado do Terraform (criado automaticamente pelo pipeline) |
 
@@ -141,9 +131,10 @@ Remove toda a infraestrutura para não consumir o crédito do lab. O banco no Su
 
 | Sintoma | Causa provável | Solução |
 |---------|----------------|---------|
-| `ExpiredToken` / `InvalidClientTokenId` | sessão do lab expirou | passo 1 e atualizar os 3 secrets da AWS |
-| `password authentication failed for user "postgres"` | senha errada no `DATABASE_URL_ADMIN` | resetar em Supabase → Database → Settings |
-| Erro ao criar `aws_wafv2_web_acl` (AccessDenied) | conta do lab sem permissão de WAF | em **Settings → Secrets and variables → Actions → Variables**, criar `HABILITAR_WAF` = `false` e rodar de novo |
+| Aviso "Deploy pulado. Secrets não configurados" | faltou algum dos 3 secrets da AWS | conferir os nomes no passo 2 |
+| `ExpiredToken` / `InvalidClientTokenId` | sessão do lab expirou | passo 1 e atualizar os 3 secrets |
+| Erro ao criar `aws_wafv2_web_acl` (AccessDenied) | conta do lab sem permissão de WAF | em **Settings → Secrets and variables → Actions → Variables**, criar `HABILITAR_WAF` = `false` e rodar de novo (o requisito de WAF deixa de ser atendido: avise o professor) |
 | Erro na chave KMS citando `LabRole` | a role do lab tem outro nome | em IAM → Roles, ache a role do `LabInstanceProfile` e crie a variável `LAB_ROLE_NAME` com esse nome |
-| URL responde 502/503 por mais de 10 min | instâncias não subiram | EC2 → Instâncias → Actions → Monitor → **Get system log**: procure `Aguardando segredo` ou `Imagem ... ainda não disponível` |
-| Pipeline parou em "Waiting for review" | aprovação manual (passo 4) | clicar em **Review deployments → Approve** |
+| Erro ao criar `aws_db_instance` citando a classe da instância | classe não liberada no lab | criar a **variable** `DB_INSTANCE_CLASS` = `db.t4g.micro` (ou `db.t3.small`) e rodar de novo |
+| URL responde 502/503 por mais de 15 min | instâncias não subiram | EC2 → Instâncias → Actions → Monitor → **Get system log**: procure `Aguardando segredo`, `Imagem ... ainda não disponível` ou `Banco ainda não disponível` |
+| Pipeline parou em "Waiting for review" | aprovação manual (passo 3) | clicar em **Review deployments → Approve** |

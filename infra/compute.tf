@@ -6,7 +6,7 @@ data "aws_ssm_parameter" "al2023" {
 # (aws secretsmanager put-secret-value), então nunca fica no state do Terraform nem no Git.
 resource "aws_secretsmanager_secret" "app" {
   name                    = var.app_secret_name
-  description             = "Credenciais da aplicacao Mentor (Supabase e JWT)"
+  description             = "Segredos da aplicacao Mentor (JWT e senha do usuario mentor_app no banco)"
   recovery_window_in_days = 0 # lab: permite destruir e recriar no mesmo dia (em produção real use 7 a 30)
   kms_key_id              = aws_kms_key.app.arn
 }
@@ -51,6 +51,9 @@ resource "aws_launch_template" "app" {
     log_group     = aws_cloudwatch_log_group.app.name
     cookie_secure = local.https ? "true" : "false"
     origin        = local.https ? "" : "http://${aws_lb.app.dns_name}"
+    db_host       = aws_db_instance.main.address
+    db_name       = aws_db_instance.main.db_name
+    db_secret_arn = aws_db_instance.main.master_user_secret[0].secret_arn
   }))
 
   tag_specifications {

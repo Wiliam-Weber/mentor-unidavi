@@ -62,20 +62,30 @@ resource "aws_vpc_security_group_egress_rule" "app_https" {
   to_port           = 443
 }
 
-resource "aws_vpc_security_group_egress_rule" "app_supabase_pooler" {
-  security_group_id = aws_security_group.app.id
-  description       = "Supabase (pooler em modo transacao)"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "tcp"
-  from_port         = 6543
-  to_port           = 6543
+resource "aws_vpc_security_group_egress_rule" "app_para_banco" {
+  security_group_id            = aws_security_group.app.id
+  description                  = "PostgreSQL apenas para o security group do banco"
+  referenced_security_group_id = aws_security_group.db.id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
 }
 
-resource "aws_vpc_security_group_egress_rule" "app_supabase_direto" {
-  security_group_id = aws_security_group.app.id
-  description       = "Supabase (conexao de sessao)"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "tcp"
-  from_port         = 5432
-  to_port           = 5432
+# Banco: aceita conexões SOMENTE das instâncias da aplicação e não sai para lugar nenhum
+resource "aws_security_group" "db" {
+  name_prefix = "${var.projeto}-db-"
+  description = "Banco: entrada 5432 somente a partir do SG da aplicacao"
+  vpc_id      = aws_vpc.main.id
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "db_da_app" {
+  security_group_id            = aws_security_group.db.id
+  description                  = "PostgreSQL vindo da aplicacao"
+  referenced_security_group_id = aws_security_group.app.id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
 }

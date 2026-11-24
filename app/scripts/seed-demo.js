@@ -34,6 +34,7 @@ const HORARIOS = [[1, '19:00', '22:30', 'Lab 3'], [2, '19:00', '22:30', 'Sala 21
   await c.connect();
   try {
     await c.query('BEGIN');
+    await c.query('SELECT pg_advisory_xact_lock(727002)'); // duas instâncias não semeiam ao mesmo tempo
     const hash = await gerarHash(senha);
     const usuario = async (nome, email, perfil) => (await c.query(
       `INSERT INTO usuarios (nome, email, senha_hash, perfil, troca_senha_obrigatoria) VALUES ($1, $2, $3, $4, false)

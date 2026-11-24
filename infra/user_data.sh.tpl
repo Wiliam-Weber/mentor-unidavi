@@ -6,22 +6,42 @@ exec > >(tee /var/log/mentor-boot.log) 2>&1
 dnf update -y --security
 dnf install -y docker
 systemctl enable --now docker
-
-# Espera o segredo ter valor (no primeiro deploy o pipeline grava logo após criar)
 umask 077
+
+# 1. Segredos (Secrets Manager, criptografados com KMS). Nada fica na imagem nem no código.
+#    - segredo da aplicação: JWT_SECRET e APP_DB_PASSWORD (gravados pelo pipeline)
+#    - segredo do administrador do banco: gerado e guardado pelo próprio RDS
 for tentativa in $(seq 1 60); do
   if aws secretsmanager get-secret-value --region ${region} --secret-id ${secret_id} \
-       --query SecretString --output text > /root/segredo.json 2>/dev/null \
-     && python3 -c 'import json,sys; d=json.load(open("/root/segredo.json")); sys.exit(0 if d.get("DATABASE_URL") and d.get("JWT_SECRET") else 1)'; then
+       --query SecretString --output text > /root/app.json 2>/dev/null \
+     && python3 -c 'import json,sys; d=json.load(open("/root/app.json")); sys.exit(0 if d.get("JWT_SECRET") and d.get("APP_DB_PASSWORD") else 1)'; then
     break
   fi
   echo "Aguardando segredo ${secret_id} (tentativa $tentativa)"
   sleep 10
 done
+aws secretsmanager get-secret-value --region ${region} --secret-id '${db_secret_arn}' \
+  --query SecretString --output text > /root/db.json
 
-# Segredos vêm do Secrets Manager em tempo de boot (nunca ficam na imagem nem no código)
-python3 -c 'import json; d=json.load(open("/root/segredo.json")); print("\n".join(f"{k}={v}" for k, v in d.items()))' > /etc/mentor.env
-shred -u /root/segredo.json
+# 2. Monta as conexões com o banco privado (senhas codificadas para URL)
+python3 - <<'PY'
+import json
+from urllib.parse import quote
+app = json.load(open('/root/app.json'))
+adm = json.load(open('/root/db.json'))
+host, banco = '${db_host}', '${db_name}'
+url_app = f"postgresql://mentor_app:{quote(app['APP_DB_PASSWORD'], safe='')}@{host}:5432/{banco}"
+url_adm = f"postgresql://{quote(adm['username'], safe='')}:{quote(adm['password'], safe='')}@{host}:5432/{banco}"
+comum = {'DB_SSL_CA_FILE': '/app/rds-ca.pem'}
+with open('/etc/mentor.env', 'w') as f:
+    for k, v in {**comum, 'DATABASE_URL': url_app, 'JWT_SECRET': app['JWT_SECRET']}.items():
+        f.write(f"{k}={v}\n")
+with open('/etc/mentor-admin.env', 'w') as f:
+    extra = {'SEED_DEMO': app.get('SEED_DEMO', '0'), 'SEED_PASSWORD': app.get('SEED_PASSWORD', '')}
+    for k, v in {**comum, 'DATABASE_URL': url_app, 'DATABASE_URL_ADMIN': url_adm, 'SYNC_APP_PASSWORD': '1', **extra}.items():
+        f.write(f"{k}={v}\n")
+PY
+shred -u /root/app.json /root/db.json
 
 cat >> /etc/mentor.env <<CONF
 NODE_ENV=production
@@ -31,7 +51,7 @@ COOKIE_SECURE=${cookie_secure}
 ALLOWED_ORIGINS=${origin}
 CONF
 
-# Login no ECR privado com a credencial temporária da instância (sem senha armazenada)
+# 3. Imagem do ECR privado (login com a credencial temporária da instância)
 for tentativa in $(seq 1 30); do
   aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${registry} \
     && docker pull ${image} && break
@@ -39,7 +59,19 @@ for tentativa in $(seq 1 30); do
   sleep 20
 done
 
-# Container endurecido: sistema de arquivos somente leitura, sem capabilities, sem escalonamento de privilégio
+# 4. Migrações com o usuário administrador (container temporário). Um lock no banco
+#    garante que só uma instância migra por vez. A credencial de admin é apagada em seguida.
+for tentativa in $(seq 1 30); do
+  docker run --rm --env-file /etc/mentor-admin.env -e NODE_ENV=production ${image} node scripts/migrate.js && break
+  echo "Banco ainda não disponível (tentativa $tentativa)"
+  sleep 20
+done
+if grep -q '^SEED_DEMO=1$' /etc/mentor-admin.env; then
+  docker run --rm --env-file /etc/mentor-admin.env -e NODE_ENV=demo ${image} node scripts/seed-demo.js || true
+fi
+shred -u /etc/mentor-admin.env
+
+# 5. Aplicação: container endurecido, conectando com o usuário de menor privilégio (mentor_app)
 docker run -d --name mentor --restart always -p 8080:8080 \
   --env-file /etc/mentor.env \
   --read-only --tmpfs /tmp \

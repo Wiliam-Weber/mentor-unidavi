@@ -169,7 +169,7 @@ resource "aws_network_acl" "privada" {
     from_port  = 8080
     to_port    = 8080
   }
-  # Respostas das conexões de saída (Supabase, Secrets Manager, ECR)
+  # Respostas das conexões de saída (Secrets Manager, ECR, CloudWatch, atualizações)
   ingress {
     rule_no    = 110
     protocol   = "tcp"
@@ -186,11 +186,12 @@ resource "aws_network_acl" "privada" {
     from_port  = 443
     to_port    = 443
   }
+  # Banco: somente para as subnets privadas de dados
   egress {
     rule_no    = 110
     protocol   = "tcp"
     action     = "allow"
-    cidr_block = "0.0.0.0/0"
+    cidr_block = cidrsubnet(var.vpc_cidr, 8, 21)
     from_port  = 5432
     to_port    = 5432
   }
@@ -198,9 +199,9 @@ resource "aws_network_acl" "privada" {
     rule_no    = 120
     protocol   = "tcp"
     action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 6543
-    to_port    = 6543
+    cidr_block = cidrsubnet(var.vpc_cidr, 8, 22)
+    from_port  = 5432
+    to_port    = 5432
   }
   egress {
     rule_no    = 130

@@ -6,8 +6,8 @@ Cada requisito tem um identificador que aparece nos testes e na rastreabilidade 
 ## 1. Visão geral
 
 **Mentor UNIDAVI** é um portal acadêmico com três perfis (aluno, professor e secretaria),
-implantado na AWS com infraestrutura como código (Terraform), banco de dados Supabase
-(PostgreSQL) e pipeline DevSecOps que bloqueia o deploy quando um scan de segurança reprova.
+implantado na AWS com infraestrutura como código (Terraform), banco de dados Amazon RDS
+PostgreSQL isolado em subnet privada e pipeline DevSecOps que bloqueia o deploy quando um scan de segurança reprova.
 
 ## 2. Perfis e requisitos funcionais
 
@@ -77,7 +77,7 @@ implantado na AWS com infraestrutura como código (Terraform), banco de dados Su
 | RNF-10 | XSS | CSP sem inline; frontend usa apenas `textContent` |
 | RNF-11 | CSRF | Cookie `SameSite=Strict` + header obrigatório `X-Requested-With` |
 | RNF-12 | Trilha de auditoria | Tabela `auditoria` append-only (trigger bloqueia UPDATE/DELETE) |
-| RNF-13 | Menor privilégio no banco | Role `mentor_app` sem DDL; RLS ativo; API pública do Supabase sem acesso |
+| RNF-13 | Menor privilégio no banco | Role `mentor_app` sem DDL; RLS ativo; migrações com o administrador só no boot, credencial apagada em seguida |
 | RNF-14 | LGPD | CPF mascarado na exibição, ranking com nome abreviado, logs com dados sensíveis redigidos |
 | RNF-15 | Segredos fora do código | Secrets Manager (KMS) carregado no boot da EC2 |
 | RNF-16 | Escalabilidade | Aplicação stateless, ALB + Auto Scaling (2 a 6 instâncias), pool via Supavisor |
@@ -88,6 +88,9 @@ implantado na AWS com infraestrutura como código (Terraform), banco de dados Su
 | RNF-21 | Não repúdio do contrato | Aceite registra SHA-256 do texto, versão, data e IP; registro imutável (sem UPDATE/DELETE) |
 | RNF-22 | Autenticidade de certificados | Código aleatório criptográfico; validação pública com rate limit e exposição mínima de dados |
 | RNF-23 | Links seguros | Materiais e links aceitam apenas https; links externos abrem com `rel="noopener noreferrer"` |
+| RNF-24 | Isolamento de rede do banco | RDS em subnets de dados sem rota para a internet, sem IP público; SG aceita 5432 só do SG da aplicação; NACL só das subnets da aplicação |
+| RNF-25 | Proteção dos dados em repouso e em trânsito | RDS criptografado com KMS, `rds.force_ssl=1`, certificado do RDS validado pela aplicação, backup de 7 dias |
+| RNF-26 | Segredos do banco sem intervenção humana | Senha do administrador gerada e guardada pelo RDS no Secrets Manager; senha do `mentor_app` e `JWT_SECRET` gerados pelo pipeline |
 
 ## 4. Regras de negócio
 
@@ -132,4 +135,5 @@ implantado na AWS com infraestrutura como código (Terraform), banco de dados Su
 | RNF-02 | `utils/senha.js` | "política de senha", "senha temporária" |
 | RNF-14 | `utils/formatos.js` | "validação e máscara de CPF" |
 | RNF-19 | `public/js/basquete-fisica.js`, `routes/basquete.js` | `basquete.test.js` (determinismo, arremesso com bola no ar, limites físicos) |
+| RNF-24, RNF-25 | `infra/database.tf`, `infra/security_groups.tf` | Checkov (151 verificações no pipeline) |
 | RNF-22 | `utils/codigos.js`, `routes/eventos.js` | "código de certificado", "validação pública de certificado" |

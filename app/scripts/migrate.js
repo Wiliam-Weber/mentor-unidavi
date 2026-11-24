@@ -4,11 +4,22 @@ const path = require('path');
 const { conectar } = require('./_conexao');
 
 (async () => {
-  const dir = path.join(__dirname, '..', '..', 'supabase', 'migrations');
+  // No container as migrações ficam em /app/migrations (MIGRATIONS_DIR); no repositório, em supabase/migrations
+  const dir = process.env.MIGRATIONS_DIR || path.join(__dirname, '..', '..', 'supabase', 'migrations');
   const arquivos = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
   const client = conectar();
   await client.connect();
   try {
+    // Várias instâncias sobem juntas no Auto Scaling: o lock garante que só uma migra por vez
+    await client.query('SELECT pg_advisory_lock(727001)');
+
+    // Compatibilidade com o RDS: os papéis da API pública do Supabase (anon, authenticated) são
+    // citados nos REVOKE das migrações. Fora do Supabase eles são criados sem login e sem permissão.
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+    END $$`);
+
     await client.query('CREATE TABLE IF NOT EXISTS _migracoes (arquivo text primary key, aplicada_em timestamptz default now())');
     for (const arquivo of arquivos) {
       const ja = await client.query('SELECT 1 FROM _migracoes WHERE arquivo = $1', [arquivo]);
@@ -41,6 +52,7 @@ const { conectar } = require('./_conexao');
     console.error('Falha na migração:', err.message);
     process.exitCode = 1;
   } finally {
+    await client.query('SELECT pg_advisory_unlock_all()').catch(() => {});
     await client.end();
   }
 })();
