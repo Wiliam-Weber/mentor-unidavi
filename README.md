@@ -78,6 +78,7 @@ Tudo é feito pelo **GitHub Actions**: basta configurar os secrets e rodar o wor
 Passo a passo completo, para quem nunca mexeu no projeto: **[docs/DEPLOY-AWS.md](docs/DEPLOY-AWS.md)**.
 
 Resumo:
+0. **Fork** do repositório para a sua conta (só o dono do repositório consegue cadastrar secrets).
 1. Learner Lab → *Start Lab* → *AWS Details* → copiar as 3 credenciais.
 2. GitHub → *Settings → Secrets and variables → Actions*: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
    `AWS_SESSION_TOKEN`, `DATABASE_URL_ADMIN`, `DATABASE_URL`, `JWT_SECRET` (e `SONAR_TOKEN`).

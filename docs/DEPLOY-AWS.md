@@ -8,6 +8,15 @@ Tempo estimado: **20 minutos** na primeira vez (a maior parte é a AWS criando o
 
 ---
 
+## 0. Fazer o fork
+
+Quem não é dono do repositório não consegue cadastrar secrets nele. Por isso, faça uma cópia na sua conta:
+
+1. Abra [github.com/Wiliam-Weber/mentor-unidavi](https://github.com/Wiliam-Weber/mentor-unidavi) → **Fork** → **Create fork**.
+2. No seu fork, abra a aba **Actions** → **I understand my workflows, go ahead and enable them**.
+
+Todos os passos abaixo são feitos **no seu fork**.
+
 ## 1. Iniciar o laboratório
 
 1. Entre no AWS Academy → curso → **Modules → Learner Lab**.
