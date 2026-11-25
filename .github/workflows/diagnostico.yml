@@ -1,0 +1,65 @@
+name: Diagnóstico do ambiente AWS
+
+# Só leitura: mostra o estado das instâncias, do Load Balancer e do banco, e o log de boot.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Auto Scaling
+        run: |
+          aws autoscaling describe-auto-scaling-groups \
+            --query "AutoScalingGroups[?starts_with(AutoScalingGroupName,'mentor')].{nome:AutoScalingGroupName,desejado:DesiredCapacity,instancias:Instances[].[InstanceId,LifecycleState,HealthStatus]}" --output json
+          aws autoscaling describe-scaling-activities --max-items 8 \
+            --query "Activities[].[StartTime,StatusCode,Description,StatusMessage]" --output table || true
+
+      - name: Instâncias EC2
+        run: |
+          IDS=$(aws autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[?starts_with(AutoScalingGroupName,'mentor')].Instances[].InstanceId" --output text)
+          echo "IDS=$IDS" >> "$GITHUB_ENV"
+          [ -n "$IDS" ] && aws ec2 describe-instances --instance-ids $IDS \
+            --query "Reservations[].Instances[].[InstanceId,State.Name,LaunchTime,PrivateIpAddress]" --output table || echo "Nenhuma instância no Auto Scaling"
+
+      - name: Saúde no Load Balancer
+        run: |
+          for tg in $(aws elbv2 describe-target-groups --query "TargetGroups[?starts_with(TargetGroupName,'mentor')].TargetGroupArn" --output text); do
+            aws elbv2 describe-target-health --target-group-arn "$tg" \
+              --query "TargetHealthDescriptions[].[Target.Id,TargetHealth.State,TargetHealth.Reason,TargetHealth.Description]" --output table
+          done
+          DNS=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?starts_with(LoadBalancerName,'mentor')].DNSName" --output text)
+          echo "URL: http://$DNS"
+          curl -s -m 10 -o /dev/null -w "GET /health -> %{http_code}\n" "http://$DNS/health" || true
+
+      - name: Banco RDS
+        run: |
+          aws rds describe-db-instances \
+            --query "DBInstances[?starts_with(DBInstanceIdentifier,'mentor')].[DBInstanceIdentifier,DBInstanceStatus]" --output table
+
+      - name: Log de boot das instâncias (final)
+        run: |
+          for id in $IDS; do
+            echo "=================== $id"
+            aws ec2 get-console-output --instance-id "$id" --latest --output text --query Output 2>/dev/null \
+              | grep -vE 'AWS_SECRET|PASSWORD|SENHA|TOKEN' | tail -n 60 || echo "(log ainda indisponível)"
+          done
+
+      - name: Logs da aplicação (CloudWatch, últimos 15 min)
+        run: |
+          GRUPO=$(aws logs describe-log-groups --log-group-name-prefix /mentor --query "logGroups[0].logGroupName" --output text)
+          echo "Grupo: $GRUPO"
+          aws logs filter-log-events --log-group-name "$GRUPO" --start-time $(( ($(date +%s) - 900) * 1000 )) \
+            --max-items 40 --query "events[].message" --output text 2>/dev/null | tail -n 40 || true
