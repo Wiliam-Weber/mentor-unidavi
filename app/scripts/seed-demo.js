@@ -43,7 +43,7 @@ const HORARIOS = [[1, '19:00', '22:30', 'Lab 3'], [2, '19:00', '22:30', 'Sala 21
     )).rows[0].id;
 
     const sec = await usuario('Secretaria Acadêmica', 'secretaria@demo.unidavi.edu.br', 'secretaria');
-    const prof = await usuario('Ademar Perfoll Junior', 'professor@demo.unidavi.edu.br', 'professor');
+    const prof = await usuario('Fabiano', 'professor@demo.unidavi.edu.br', 'professor');
     const prof2 = await usuario('Marina Krause Silva', 'marina@demo.unidavi.edu.br', 'professor');
 
     const alunos = [];
