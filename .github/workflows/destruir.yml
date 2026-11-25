@@ -1,7 +1,7 @@
 name: Destruir ambiente AWS
 
 # Remove toda a infraestrutura (use depois da apresentação para não gastar o crédito do lab).
-# Não apaga o banco do Supabase nem o bucket do state.
+# Apaga também o banco RDS. Não apaga o bucket do state.
 on:
   workflow_dispatch:
     inputs:

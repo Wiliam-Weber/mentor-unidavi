@@ -74,7 +74,7 @@ resource "aws_autoscaling_group" "app" {
   desired_capacity          = var.asg_desired
   target_group_arns         = [aws_lb_target_group.app.arn]
   health_check_type         = "ELB"
-  health_check_grace_period = 180
+  health_check_grace_period = 600 # boot: atualizações, Docker, imagem e migrações
 
   launch_template {
     id      = aws_launch_template.app.id
