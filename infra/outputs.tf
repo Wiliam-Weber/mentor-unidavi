@@ -11,7 +11,7 @@ output "segredo_arn" {
 }
 
 output "bucket_logs" {
-  value = aws_s3_bucket.logs.id
+  value = data.aws_s3_bucket.logs.id
 }
 
 output "ecr_repositorio" {

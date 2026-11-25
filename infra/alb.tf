@@ -12,7 +12,7 @@ resource "aws_lb" "app" {
   enable_deletion_protection = var.alb_deletion_protection
 
   access_logs {
-    bucket  = aws_s3_bucket.logs.id
+    bucket  = data.aws_s3_bucket.logs.id
     prefix  = "alb"
     enabled = true
   }

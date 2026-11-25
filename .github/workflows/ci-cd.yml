@@ -233,6 +233,17 @@ jobs:
           fi
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
 
+      # Bucket de logs (Flow Logs e ALB). Criado aqui porque o AWS Academy nega uma leitura que o
+      # recurso aws_s3_bucket do Terraform faz; a configuração de segurança dele fica no Terraform (logs.tf).
+      - name: Bucket de logs (cria na primeira vez)
+        run: |
+          CONTA=$(aws sts get-caller-identity --query Account --output text)
+          LOGS="mentor-logs-$CONTA"
+          if ! aws s3api head-bucket --bucket "$LOGS" 2>/dev/null; then
+            aws s3api create-bucket --bucket "$LOGS" --region "$AWS_REGION"
+          fi
+          echo "TF_VAR_logs_bucket=$LOGS" >> "$GITHUB_ENV"
+
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
@@ -248,6 +259,18 @@ jobs:
             -backend-config="use_lockfile=true"
 
       - run: terraform validate
+
+      # Deploys antigos criavam o bucket de logs pelo Terraform; tira esse registro do state
+      # (sem apagar nada na AWS) para o Terraform não tentar lê-lo de novo.
+      - name: Migrar o bucket de logs antigo
+        run: |
+          if terraform state list 2>/dev/null | grep -qx 'aws_s3_bucket.logs'; then
+            ANTIGO=$(terraform state show -no-color aws_s3_bucket.logs | awk -F'"' '/^ *bucket *=/{print $2; exit}')
+            terraform state rm aws_s3_bucket.logs
+            if [ -n "$ANTIGO" ] && [ "$ANTIGO" != "$TF_VAR_logs_bucket" ]; then
+              aws s3 rb "s3://$ANTIGO" --force || echo "::warning::Não foi possível apagar o bucket antigo $ANTIGO"
+            fi
+          fi
 
       # Etapa 1: cria o que precisa existir antes das instâncias (chave KMS, ECR e segredo)
       - name: terraform apply - base (KMS, ECR, Secrets Manager)

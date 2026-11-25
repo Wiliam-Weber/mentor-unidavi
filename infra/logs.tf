@@ -1,14 +1,16 @@
 data "aws_caller_identity" "atual" {}
 data "aws_elb_service_account" "principal" {}
 
-# Bucket central de logs (Flow Logs + access logs do ALB)
-resource "aws_s3_bucket" "logs" {
-  bucket_prefix = "${var.projeto}-logs-"
-  force_destroy = true
+# Bucket central de logs (Flow Logs + access logs do ALB).
+# O bucket em si é criado pelo pipeline (como o bucket do state): no AWS Academy uma SCP nega
+# s3:GetBucketObjectLockConfiguration, que o recurso aws_s3_bucket sempre lê. Toda a configuração
+# de segurança dele (bloqueio público, criptografia, versionamento, retenção, política) continua aqui.
+data "aws_s3_bucket" "logs" {
+  bucket = var.logs_bucket
 }
 
 resource "aws_s3_bucket_public_access_block" "logs" {
-  bucket                  = aws_s3_bucket.logs.id
+  bucket                  = data.aws_s3_bucket.logs.id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
@@ -16,14 +18,14 @@ resource "aws_s3_bucket_public_access_block" "logs" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "logs" {
-  bucket = aws_s3_bucket.logs.id
+  bucket = data.aws_s3_bucket.logs.id
   rule {
     object_ownership = "BucketOwnerEnforced"
   }
 }
 
 resource "aws_s3_bucket_versioning" "logs" {
-  bucket = aws_s3_bucket.logs.id
+  bucket = data.aws_s3_bucket.logs.id
   versioning_configuration {
     status = "Enabled"
   }
@@ -31,7 +33,7 @@ resource "aws_s3_bucket_versioning" "logs" {
 
 # Access logs do ALB só aceitam SSE-S3 (AES256)
 resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
-  bucket = aws_s3_bucket.logs.id
+  bucket = data.aws_s3_bucket.logs.id
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -40,7 +42,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "logs" {
-  bucket = aws_s3_bucket.logs.id
+  bucket = data.aws_s3_bucket.logs.id
   rule {
     id     = "retencao-90-dias"
     status = "Enabled"
@@ -61,7 +63,7 @@ data "aws_iam_policy_document" "logs" {
   statement {
     sid       = "AlbAccessLogs"
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.logs.arn}/alb/AWSLogs/${data.aws_caller_identity.atual.account_id}/*"]
+    resources = ["${data.aws_s3_bucket.logs.arn}/alb/AWSLogs/${data.aws_caller_identity.atual.account_id}/*"]
     principals {
       type        = "AWS"
       identifiers = [data.aws_elb_service_account.principal.arn]
@@ -71,7 +73,7 @@ data "aws_iam_policy_document" "logs" {
   statement {
     sid       = "FlowLogsWrite"
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.logs.arn}/vpc-flow-logs/AWSLogs/${data.aws_caller_identity.atual.account_id}/*"]
+    resources = ["${data.aws_s3_bucket.logs.arn}/vpc-flow-logs/AWSLogs/${data.aws_caller_identity.atual.account_id}/*"]
     principals {
       type        = "Service"
       identifiers = ["delivery.logs.amazonaws.com"]
@@ -86,7 +88,7 @@ data "aws_iam_policy_document" "logs" {
   statement {
     sid       = "FlowLogsAcl"
     actions   = ["s3:GetBucketAcl", "s3:ListBucket"]
-    resources = [aws_s3_bucket.logs.arn]
+    resources = [data.aws_s3_bucket.logs.arn]
     principals {
       type        = "Service"
       identifiers = ["delivery.logs.amazonaws.com"]
@@ -98,8 +100,8 @@ data "aws_iam_policy_document" "logs" {
     effect  = "Deny"
     actions = ["s3:*"]
     resources = [
-      aws_s3_bucket.logs.arn,
-      "${aws_s3_bucket.logs.arn}/*",
+      data.aws_s3_bucket.logs.arn,
+      "${data.aws_s3_bucket.logs.arn}/*",
     ]
     principals {
       type        = "*"
@@ -114,7 +116,7 @@ data "aws_iam_policy_document" "logs" {
 }
 
 resource "aws_s3_bucket_policy" "logs" {
-  bucket     = aws_s3_bucket.logs.id
+  bucket     = data.aws_s3_bucket.logs.id
   policy     = data.aws_iam_policy_document.logs.json
   depends_on = [aws_s3_bucket_public_access_block.logs]
 }

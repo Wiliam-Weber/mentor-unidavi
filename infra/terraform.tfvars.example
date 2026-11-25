@@ -6,3 +6,4 @@ asg_max       = 4
 asg_desired   = 2
 # habilitar_waf   = false   # use se a conta do lab recusar o WAFv2
 # certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+logs_bucket = "mentor-logs-123456789012" # o pipeline cria e passa automaticamente

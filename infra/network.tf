@@ -219,6 +219,6 @@ resource "aws_flow_log" "vpc" {
   vpc_id               = aws_vpc.main.id
   traffic_type         = "ALL"
   log_destination_type = "s3"
-  log_destination      = "${aws_s3_bucket.logs.arn}/vpc-flow-logs/"
+  log_destination      = "${data.aws_s3_bucket.logs.arn}/vpc-flow-logs/"
   depends_on           = [aws_s3_bucket_policy.logs]
 }

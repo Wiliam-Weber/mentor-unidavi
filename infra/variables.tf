@@ -94,3 +94,8 @@ variable "db_deletion_protection" {
   type        = bool
   default     = false
 }
+
+variable "logs_bucket" {
+  description = "Nome do bucket de logs (criado pelo pipeline; veja logs.tf)"
+  type        = string
+}

@@ -45,4 +45,9 @@ jobs:
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"
       - name: terraform destroy
-        run: terraform destroy -input=false -auto-approve
+        run: |
+          CONTA=$(aws sts get-caller-identity --query Account --output text)
+          export TF_VAR_logs_bucket="mentor-logs-$CONTA"
+          terraform destroy -input=false -auto-approve
+          # O bucket de logs é criado pelo pipeline, então é apagado aqui (com os logs dentro)
+          aws s3 rb "s3://$TF_VAR_logs_bucket" --force || true
